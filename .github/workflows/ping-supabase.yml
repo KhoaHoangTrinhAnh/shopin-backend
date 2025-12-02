@@ -28,7 +28,7 @@ jobs:
       - name: Ping Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           # Fallback to hardcoded values for testing (remove in production)
           FALLBACK_SUPABASE_URL: "https://ijgcycxbnduntvguabis.supabase.co"
         run: |
