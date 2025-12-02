@@ -33,6 +33,20 @@ jobs:
           node -e "
           (async () => {
             try {
+              // Get URL and Key from environment
+              const supabaseUrl = process.env.SUPABASE_URL;
+              const supabaseKey = process.env.SUPABASE_KEY;
+              
+              // Debugging: Log environment variables (optional, mask key)
+              console.log('Supabase URL:', supabaseUrl);
+              console.log('Supabase Key exists:', !!supabaseKey);
+
+              if (!supabaseUrl) {
+                throw new Error('SUPABASE_URL is not set in secrets');
+              }
+              if (!supabaseKey) {
+                throw new Error('SUPABASE_KEY is not set in secrets');
+              }
 
               // Import Supabase client
               const { createClient } = require('@supabase/supabase-js');
