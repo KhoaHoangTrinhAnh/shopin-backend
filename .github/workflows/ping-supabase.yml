@@ -16,9 +16,9 @@ jobs:
 
       # Step 2: Set up Node.js
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18' # Use Node.js 18
+          node-version: '20' # Use Node.js 20
 
       # Step 3: Install Supabase Client
       - name: Install Supabase Client
@@ -29,17 +29,34 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          # Fallback to hardcoded values for testing (remove in production)
+          FALLBACK_SUPABASE_URL: "https://ijgcycxbnduntvguabis.supabase.co"
         run: |
           node -e "
           (async () => {
             try {
+              // Get URL and Key from environment or fallback
+              const supabaseUrl = process.env.SUPABASE_URL || process.env.FALLBACK_SUPABASE_URL;
+              const supabaseKey = process.env.SUPABASE_KEY;
+              
               // Debugging: Log environment variables (optional, mask key)
-              console.log('Supabase URL:', process.env.SUPABASE_URL);
-              console.log('Supabase Key exists:', !!process.env.SUPABASE_KEY);
+              console.log('Supabase URL:', supabaseUrl);
+              console.log('Supabase Key exists:', !!supabaseKey);
+              console.log('Secrets available:', {
+                SUPABASE_URL: !!process.env.SUPABASE_URL,
+                SUPABASE_KEY: !!process.env.SUPABASE_KEY
+              });
+
+              if (!supabaseUrl) {
+                throw new Error('SUPABASE_URL is not set in secrets or fallback');
+              }
+              if (!supabaseKey) {
+                throw new Error('SUPABASE_KEY is not set in secrets');
+              }
 
               // Import Supabase client
               const { createClient } = require('@supabase/supabase-js');
-              const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+              const supabase = createClient(supabaseUrl, supabaseKey);
 
               // Ping Supabase by querying the User table
               const { data, error } = await supabase.from('User').select('id').limit(1);
