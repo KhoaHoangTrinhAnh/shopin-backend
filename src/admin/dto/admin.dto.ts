@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray, IsEnum, ValidateNested, IsNumber, IsInt, Min, Max } from 'class-validator';
+import { IsString, IsOptional, IsArray, IsEnum, ValidateNested, IsNumber, Min, Max } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 
 // ============================================================================
@@ -50,9 +50,8 @@ export class CreateArticleDto {
   slug?: string;
 
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  tags?: string[];
+  @IsString()
+  excerpt?: string;
 
   @IsOptional()
   @IsString()
@@ -107,9 +106,8 @@ export class UpdateArticleDto {
   slug?: string;
 
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  tags?: string[];
+  @IsString()
+  excerpt?: string;
 
   @IsOptional()
   @IsString()
@@ -161,9 +159,6 @@ export class GenerateArticleDto {
   @IsOptional()
   @IsString()
   topic?: string;
-
-  @IsOptional()
-  customPrompt?: string | Record<string, any>; // Can be text string or JSONB object
 }
 
 // ============================================================================
@@ -204,7 +199,7 @@ export class CreateCouponDto {
   @IsOptional()
   @IsString()
   @Transform(({ value }) => value ? new Date(value).toISOString() : null)
-  starts_at?: string;
+  start_date?: string;
 
   @IsOptional()
   @IsString()
@@ -252,7 +247,7 @@ export class UpdateCouponDto {
   @IsOptional()
   @IsString()
   @Transform(({ value }) => value ? new Date(value).toISOString() : null)
-  starts_at?: string;
+  start_date?: string;
 
   @IsOptional()
   @IsString()
@@ -408,152 +403,19 @@ export class UpdateOrderStatusDto {
 }
 
 // ============================================================================
-// PRODUCT DTOs
-// ============================================================================
-
-export class CreateProductDto {
-  @IsString()
-  name: string;
-
-  @IsString()
-  slug: string;
-
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @IsNumber()
-  brand_id: number;
-
-  @IsNumber()
-  category_id: number;
-
-  @IsOptional()
-  @IsString()
-  meta_title?: string;
-
-  @IsOptional()
-  @IsString()
-  meta_description?: string;
-
-  @IsOptional()
-  is_active?: boolean;
-}
-
-export class UpdateProductDto {
-  @IsOptional()
-  @IsString()
-  name?: string;
-
-  @IsOptional()
-  @IsString()
-  slug?: string;
-
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @IsOptional()
-  @IsNumber()
-  brand_id?: number;
-
-  @IsOptional()
-  @IsNumber()
-  category_id?: number;
-
-  @IsOptional()
-  @IsString()
-  meta_title?: string;
-
-  @IsOptional()
-  @IsString()
-  meta_description?: string;
-
-  @IsOptional()
-  is_active?: boolean;
-}
-
-export class CreateProductVariantDto {
-  @IsString()
-  product_id: string;
-
-  @IsOptional()
-  @IsString()
-  sku?: string;
-
-  @IsOptional()
-  @IsString()
-  color?: string;
-
-  @IsOptional()
-  @IsString()
-  storage?: string;
-
-  @IsNumber()
-  @Min(0)
-  price: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  original_price?: number;
-
-  @IsNumber()
-  @Min(0)
-  qty: number;
-
-  @IsOptional()
-  @IsString()
-  main_image?: string;
-}
-
-export class UpdateProductVariantDto {
-  @IsOptional()
-  @IsString()
-  sku?: string;
-
-  @IsOptional()
-  @IsString()
-  color?: string;
-
-  @IsOptional()
-  @IsString()
-  storage?: string;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  price?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  original_price?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  qty?: number;
-
-  @IsOptional()
-  @IsString()
-  main_image?: string;
-}
-
-// ============================================================================
 // QUERY DTOs
 // ============================================================================
 
 export class PaginationQueryDto {
   @IsOptional()
   @Type(() => Number)
-  @IsInt()
+  @IsNumber()
   @Min(1)
   page?: number = 1;
 
   @IsOptional()
   @Type(() => Number)
-  @IsInt()
+  @IsNumber()
   @Min(1)
   @Max(100)
   limit?: number = 20;

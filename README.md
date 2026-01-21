@@ -72,6 +72,7 @@ Dữ liệu sản phẩm trong hệ thống là **dữ liệu thực tế** đư
 - 💰 **Giá cả thực tế** từ thị trường Việt Nam
 
 > Dataset được tự động crawl và convert thành SQL scripts ready-to-import vào Supabase/PostgreSQL.
+- 🤖 AI-powered article generation (OpenRouter)
 
 ---
 
@@ -258,20 +259,7 @@ OPENROUTER_API_KEY=sk-or-v1-xxxxx
 # Hoặc sử dụng Supabase SQL Editor để run migrations
 ```
 
-5. **Import product data (Optional):**
-
-Để có dữ liệu sản phẩm thực tế, import từ [TheGioiDiDong Crawler](https://github.com/KhoaHoangTrinhAnh/thegioididong-product-crawler):
-
-```bash
-# Clone crawler repository
-git clone https://github.com/KhoaHoangTrinhAnh/thegioididong-product-crawler.git
-cd thegioididong-product-crawler
-
-# Sử dụng file SQL đã có sẵn hoặc crawl mới
-# Import database_inserts.sql vào Supabase SQL Editor
-```
-
-6. **Start development server:**
+5. **Start development server:**
 ```bash
 npm run start:dev
 ```
@@ -603,42 +591,7 @@ CMD ["npm", "run", "start:prod"]
 
 ---
 
-## � Related Repositories
-
-ShopIn là hệ thống fullstack bao gồm 3 repositories:
-
-### 📦 Main Repositories
-
-| Repository | Description | Link |
-|------------|-------------|------|
-| **Frontend** | Next.js 16 web application | [shopin-frontend](https://github.com/KhoaHoangTrinhAnh/shopin-frontend) |
-| **Backend** | NestJS API server (repo này) | [shopin-backend](https://github.com/KhoaHoangTrinhAnh/shopin-backend) |
-| **Crawler** | Python web crawler cho data | [thegioididong-product-crawler](https://github.com/KhoaHoangTrinhAnh/thegioididong-product-crawler) |
-
-### 🔄 System Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                   SHOPIN ECOSYSTEM                      │
-└─────────────────────────────────────────────────────────┘
-
-   Crawler (Python)          Backend (NestJS)        Frontend (Next.js)
-  ┌──────────────┐          ┌──────────────┐        ┌──────────────┐
-  │              │          │              │        │              │
-  │  Selenium    │  crawl   │  PostgreSQL  │  API   │   React 19   │
-  │  BeautifulSoup│ ──────> │  Supabase    │ <────> │  TailwindCSS │
-  │              │  data    │  NestJS      │  HTTP  │  TypeScript  │
-  │              │          │              │        │              │
-  └──────────────┘          └──────────────┘        └──────────────┘
-       ↓                          ↓                        ↓
-   JSON files              Database Schema            User Interface
-   SQL scripts             REST API                   Admin Panel
-   Product images          Authentication             E-commerce UI
-```
-
----
-
-## �📚 Documentation
+## 📚 Documentation
 
 ### Feature Documentation
 

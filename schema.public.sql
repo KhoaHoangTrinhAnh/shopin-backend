@@ -25,32 +25,15 @@ CREATE TABLE public.admin_settings (
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT admin_settings_pkey PRIMARY KEY (id)
 );
-CREATE TABLE public.ai_usage_logs (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  user_id uuid,
-  feature text NOT NULL DEFAULT 'article_generation'::text,
-  keyword text,
-  model_name text,
-  tokens_used integer DEFAULT 0,
-  prompt_tokens integer DEFAULT 0,
-  completion_tokens integer DEFAULT 0,
-  estimated_cost numeric DEFAULT 0,
-  success boolean DEFAULT true,
-  error_message text,
-  created_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT ai_usage_logs_pkey PRIMARY KEY (id),
-  CONSTRAINT ai_usage_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
-);
 CREATE TABLE public.api_settings (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   key text NOT NULL UNIQUE,
   model_name text NOT NULL,
   api_endpoint text NOT NULL,
-  default_prompt jsonb NOT NULL DEFAULT '{}'::jsonb,
+  default_prompt text NOT NULL,
   description text,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
-  name text,
   CONSTRAINT api_settings_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.articles (
@@ -231,14 +214,7 @@ CREATE TABLE public.orders (
   confirmed_at timestamp with time zone,
   confirmed_by uuid,
   admin_notes text,
-  cancellation_requested boolean DEFAULT false,
-  cancellation_requested_at timestamp with time zone,
-  cancellation_reason text,
-  cancellation_approved boolean,
-  cancellation_approved_at timestamp with time zone,
-  cancellation_approved_by uuid,
   CONSTRAINT orders_pkey PRIMARY KEY (id),
-  CONSTRAINT orders_cancellation_approved_by_fkey FOREIGN KEY (cancellation_approved_by) REFERENCES public.profiles(id),
   CONSTRAINT orders_confirmed_by_fkey FOREIGN KEY (confirmed_by) REFERENCES public.profiles(id),
   CONSTRAINT orders_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id)
 );
@@ -291,7 +267,6 @@ CREATE TABLE public.profiles (
   gender text CHECK (gender = ANY (ARRAY['male'::text, 'female'::text, 'other'::text])),
   date_of_birth date,
   blocked boolean DEFAULT false,
-  deleted_at timestamp with time zone,
   CONSTRAINT profiles_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.reviews (

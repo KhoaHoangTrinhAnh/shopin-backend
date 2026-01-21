@@ -45,15 +45,6 @@ export class ArticlesController {
   }
 
   /**
-   * Generate article content using AI
-   * MUST be before @Post() to avoid route conflict
-   */
-  @Post('generate')
-  async generateContent(@Profile() profile: { id: string }, @Body() dto: GenerateArticleDto) {
-    return this.articlesService.generateContent(profile.id, dto);
-  }
-
-  /**
    * Create a new article
    */
   @Post()
@@ -75,6 +66,14 @@ export class ArticlesController {
   @Delete(':id')
   async delete(@Param('id') id: string) {
     return this.articlesService.delete(id);
+  }
+
+  /**
+   * Generate article content using AI
+   */
+  @Post('generate')
+  async generateContent(@Body() dto: GenerateArticleDto) {
+    return this.articlesService.generateContent(dto);
   }
 
   /**

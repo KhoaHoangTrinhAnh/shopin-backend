@@ -1,14 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
-import { 
-  PaginationQueryDto, 
-  UpdateOrderStatusDto, 
-  ConfirmOrderDto,
-  CreateProductDto,
-  UpdateProductDto,
-  CreateProductVariantDto,
-  UpdateProductVariantDto,
-} from './dto/admin.dto';
+import { PaginationQueryDto, UpdateOrderStatusDto, ConfirmOrderDto } from './dto/admin.dto';
 
 @Injectable()
 export class AdminService {
@@ -199,7 +191,7 @@ export class AdminService {
           id,
           quantity,
           price,
-          variant:product_variants(id, main_image, product:products(id, name, slug))
+          product:products(id, name, thumbnail)
         )
       `,
         { count: 'exact' },
@@ -253,7 +245,7 @@ export class AdminService {
           id,
           quantity,
           price,
-          variant:product_variants(id, main_image, product:products!product_variants_product_id_fkey(id, name, slug))
+          product:products(id, name, thumbnail, slug)
         ),
         confirmed_by_admin:profiles!orders_confirmed_by_fkey(id, full_name)
       `,
@@ -416,58 +408,18 @@ export class AdminService {
     const { count: ordersCount } = await supabase
       .from('orders')
       .select('id', { count: 'exact', head: true })
-      .eq('profile_id', id);
+      .eq('user_id', id);
 
     // Get user addresses
     const { data: addresses } = await supabase
       .from('addresses')
       .select('*')
-      .eq('profile_id', id);
+      .eq('user_id', id);
 
     return {
       ...data,
       ordersCount: ordersCount || 0,
       addresses: addresses || [],
-    };
-  }
-
-  /**
-   * Get user orders with pagination
-   */
-  async getUserOrders(userId: string, query: PaginationQueryDto) {
-    const { page = 1, limit = 10, sort = 'placed_at', order = 'desc' } = query;
-    const offset = (page - 1) * limit;
-
-    const supabase = this.supabaseService.getClient();
-
-    const { data, error, count } = await supabase
-      .from('orders')
-      .select(`
-        *,
-        profile:profiles(id, full_name, email),
-        order_items(
-          id,
-          quantity,
-          price,
-          variant:product_variants(id, attributes, product:products!product_variants_product_id_fkey(id, name))
-        )
-      `, { count: 'exact' })
-      .eq('profile_id', userId)
-      .order(sort, { ascending: order === 'asc' })
-      .range(offset, offset + limit - 1);
-
-    if (error) {
-      throw new BadRequestException(`Lỗi khi lấy danh sách đơn hàng: ${error.message}`);
-    }
-
-    return {
-      data,
-      meta: {
-        total: count || 0,
-        page,
-        limit,
-        totalPages: Math.ceil((count || 0) / limit),
-      },
     };
   }
 
@@ -486,97 +438,6 @@ export class AdminService {
 
     if (error) {
       throw new BadRequestException(`Lỗi khi cập nhật quyền người dùng: ${error.message}`);
-    }
-
-    return data;
-  }
-
-  /**
-   * Toggle user enabled/disabled status
-   */
-  async toggleUserEnabled(id: string) {
-    const supabase = this.supabaseService.getClient();
-
-    // Get current status
-    const { data: user } = await supabase
-      .from('profiles')
-      .select('blocked')
-      .eq('id', id)
-      .single();
-
-    if (!user) {
-      throw new NotFoundException(`Không tìm thấy người dùng với ID: ${id}`);
-    }
-
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({ 
-        blocked: !user.blocked,
-        updated_at: new Date().toISOString() 
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      throw new BadRequestException(`Lỗi khi cập nhật trạng thái người dùng: ${error.message}`);
-    }
-
-    return data;
-  }
-
-  /**
-   * Block/unblock user from chat
-   */
-  async toggleUserChatBlock(id: string) {
-    const supabase = this.supabaseService.getClient();
-
-    // Get current chat_blocked status
-    const { data: user } = await supabase
-      .from('profiles')
-      .select('chat_blocked')
-      .eq('id', id)
-      .single();
-
-    if (!user) {
-      throw new NotFoundException(`Không tìm thấy người dùng với ID: ${id}`);
-    }
-
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({ 
-        chat_blocked: !user.chat_blocked,
-        updated_at: new Date().toISOString() 
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      throw new BadRequestException(`Lỗi khi cập nhật trạng thái chat: ${error.message}`);
-    }
-
-    return data;
-  }
-
-  /**
-   * Soft delete user
-   */
-  async softDeleteUser(id: string) {
-    const supabase = this.supabaseService.getClient();
-
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({ 
-        deleted_at: new Date().toISOString(),
-        updated_at: new Date().toISOString() 
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      throw new BadRequestException(`Lỗi khi xóa người dùng: ${error.message}`);
     }
 
     return data;
@@ -710,311 +571,5 @@ export class AdminService {
     }
 
     return data;
-  }
-
-  // =========================================================================
-  // PRODUCTS
-  // =========================================================================
-
-  /**
-   * Get all products with pagination
-   */
-  async getProducts(query: PaginationQueryDto) {
-    const { page = 1, limit = 20, search, sort = 'created_at', order = 'desc' } = query;
-    const offset = (page - 1) * limit;
-
-    const supabase = this.supabaseService.getClient();
-    let queryBuilder = supabase
-      .from('products')
-      .select(`
-        *,
-        brand:brands(id, name),
-        category:categories(id, name),
-        default_variant:product_variants!fk_products_default_variant(
-          id, price, original_price, qty, main_image
-        )
-      `, { count: 'exact' });
-
-    // Apply search filter
-    if (search) {
-      queryBuilder = queryBuilder.or(`name.ilike.%${search}%,slug.ilike.%${search}%`);
-    }
-
-    // Apply sorting
-    queryBuilder = queryBuilder.order(sort, { ascending: order === 'asc' });
-
-    // Apply pagination
-    queryBuilder = queryBuilder.range(offset, offset + limit - 1);
-
-    const { data, error, count } = await queryBuilder;
-
-    if (error) {
-      throw new BadRequestException(`Lỗi khi lấy danh sách sản phẩm: ${error.message}`);
-    }
-
-    return {
-      data,
-      meta: {
-        total: count || 0,
-        page,
-        limit,
-        totalPages: Math.ceil((count || 0) / limit),
-      },
-    };
-  }
-
-  /**
-   * Get product detail
-   */
-  async getProductDetail(id: string) {
-    const supabase = this.supabaseService.getClient();
-
-    const { data, error } = await supabase
-      .from('products')
-      .select(`
-        *,
-        brand:brands(id, name),
-        category:categories(id, name),
-        variants:product_variants(*)
-      `)
-      .eq('id', id)
-      .single();
-
-    if (error) {
-      throw new NotFoundException(`Không tìm thấy sản phẩm với ID: ${id}`);
-    }
-
-    return data;
-  }
-
-  /**
-   * Create product
-   */
-  async createProduct(dto: CreateProductDto) {
-    const supabase = this.supabaseService.getClient();
-
-    // Check slug uniqueness
-    const { data: existing } = await supabase
-      .from('products')
-      .select('id')
-      .eq('slug', dto.slug)
-      .single();
-
-    if (existing) {
-      throw new BadRequestException(`Slug "${dto.slug}" đã tồn tại`);
-    }
-
-    const { data, error } = await supabase
-      .from('products')
-      .insert({
-        ...dto,
-        is_active: dto.is_active ?? true,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      throw new BadRequestException(`Lỗi khi tạo sản phẩm: ${error.message}`);
-    }
-
-    return data;
-  }
-
-  /**
-   * Update product
-   */
-  async updateProduct(id: string, dto: UpdateProductDto) {
-    const supabase = this.supabaseService.getClient();
-
-    // Check if slug is being changed and is unique
-    if (dto.slug) {
-      const { data: existing } = await supabase
-        .from('products')
-        .select('id')
-        .eq('slug', dto.slug)
-        .neq('id', id)
-        .single();
-
-      if (existing) {
-        throw new BadRequestException(`Slug "${dto.slug}" đã tồn tại`);
-      }
-    }
-
-    const { data, error } = await supabase
-      .from('products')
-      .update({
-        ...dto,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      throw new BadRequestException(`Lỗi khi cập nhật sản phẩm: ${error.message}`);
-    }
-
-    return data;
-  }
-
-  /**
-   * Delete product
-   */
-  async deleteProduct(id: string) {
-    const supabase = this.supabaseService.getClient();
-
-    // Check if product has orders
-    const { data: ordersData } = await supabase
-      .from('order_items')
-      .select('id')
-      .eq('product_id', id)
-      .limit(1);
-
-    if (ordersData && ordersData.length > 0) {
-      throw new BadRequestException('Không thể xóa sản phẩm đã có đơn hàng. Hãy vô hiệu hóa thay vì xóa.');
-    }
-
-    // Delete all variants first
-    await supabase
-      .from('product_variants')
-      .delete()
-      .eq('product_id', id);
-
-    // Delete product
-    const { error } = await supabase
-      .from('products')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      throw new BadRequestException(`Lỗi khi xóa sản phẩm: ${error.message}`);
-    }
-
-    return { message: 'Xóa sản phẩm thành công' };
-  }
-
-  /**
-   * Toggle product active status
-   */
-  async toggleProductActive(id: string) {
-    const supabase = this.supabaseService.getClient();
-
-    // Get current status
-    const { data: product } = await supabase
-      .from('products')
-      .select('is_active')
-      .eq('id', id)
-      .single();
-
-    if (!product) {
-      throw new NotFoundException(`Không tìm thấy sản phẩm với ID: ${id}`);
-    }
-
-    // Toggle status
-    const { data, error } = await supabase
-      .from('products')
-      .update({
-        is_active: !product.is_active,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      throw new BadRequestException(`Lỗi khi thay đổi trạng thái sản phẩm: ${error.message}`);
-    }
-
-    return data;
-  }
-
-  /**
-   * Get product variants
-   */
-  async getProductVariants(productId: string) {
-    const supabase = this.supabaseService.getClient();
-
-    const { data, error } = await supabase
-      .from('product_variants')
-      .select('*')
-      .eq('product_id', productId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      throw new BadRequestException(`Lỗi khi lấy danh sách biến thể: ${error.message}`);
-    }
-
-    return data;
-  }
-
-  /**
-   * Create product variant
-   */
-  async createProductVariant(dto: CreateProductVariantDto) {
-    const supabase = this.supabaseService.getClient();
-
-    const { data, error } = await supabase
-      .from('product_variants')
-      .insert(dto)
-      .select()
-      .single();
-
-    if (error) {
-      throw new BadRequestException(`Lỗi khi tạo biến thể: ${error.message}`);
-    }
-
-    return data;
-  }
-
-  /**
-   * Update product variant
-   */
-  async updateProductVariant(variantId: string, dto: UpdateProductVariantDto) {
-    const supabase = this.supabaseService.getClient();
-
-    const { data, error } = await supabase
-      .from('product_variants')
-      .update({
-        ...dto,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', variantId)
-      .select()
-      .single();
-
-    if (error) {
-      throw new BadRequestException(`Lỗi khi cập nhật biến thể: ${error.message}`);
-    }
-
-    return data;
-  }
-
-  /**
-   * Delete product variant
-   */
-  async deleteProductVariant(variantId: string) {
-    const supabase = this.supabaseService.getClient();
-
-    // Check if variant is used in orders
-    const { data: ordersData } = await supabase
-      .from('order_items')
-      .select('id')
-      .eq('variant_id', variantId)
-      .limit(1);
-
-    if (ordersData && ordersData.length > 0) {
-      throw new BadRequestException('Không thể xóa biến thể đã có trong đơn hàng');
-    }
-
-    const { error } = await supabase
-      .from('product_variants')
-      .delete()
-      .eq('id', variantId);
-
-    if (error) {
-      throw new BadRequestException(`Lỗi khi xóa biến thể: ${error.message}`);
-    }
-
-    return { message: 'Xóa biến thể thành công' };
   }
 }
