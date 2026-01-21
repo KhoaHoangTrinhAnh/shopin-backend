@@ -53,19 +53,19 @@ export class CouponsService {
   }
 
   /**
-   * Get a single coupon by ID
+   * Get a single coupon by code
    */
-  async findOne(id: string) {
+  async findOne(code: string) {
     const supabase = this.supabaseService.getClient();
 
     const { data, error } = await supabase
       .from('coupons')
       .select('*')
-      .eq('id', id)
+      .eq('code', code.toUpperCase())
       .single();
 
     if (error) {
-      throw new NotFoundException(`Không tìm thấy mã giảm giá với ID: ${id}`);
+      throw new NotFoundException(`Không tìm thấy mã giảm giá: ${code}`);
     }
 
     return data;
@@ -80,7 +80,7 @@ export class CouponsService {
     // Check code uniqueness
     const { data: existing } = await supabase
       .from('coupons')
-      .select('id')
+      .select('code')
       .eq('code', dto.code.toUpperCase())
       .single();
 
@@ -110,41 +110,30 @@ export class CouponsService {
   /**
    * Update a coupon
    */
-  async update(id: string, dto: UpdateCouponDto) {
+  async update(code: string, dto: UpdateCouponDto) {
     const supabase = this.supabaseService.getClient();
+
+    const codeUpper = code.toUpperCase();
 
     // Check coupon exists
     const { data: existing, error: findError } = await supabase
       .from('coupons')
-      .select('id')
-      .eq('id', id)
+      .select('code')
+      .eq('code', codeUpper)
       .single();
 
     if (findError || !existing) {
-      throw new NotFoundException(`Không tìm thấy mã giảm giá với ID: ${id}`);
+      throw new NotFoundException(`Không tìm thấy mã giảm giá: ${code}`);
     }
 
-    // Check code uniqueness if updating code
-    if (dto.code) {
-      const { data: codeExists } = await supabase
-        .from('coupons')
-        .select('id')
-        .eq('code', dto.code.toUpperCase())
-        .neq('id', id)
-        .single();
-
-      if (codeExists) {
-        throw new BadRequestException(`Mã giảm giá ${dto.code} đã tồn tại`);
-      }
-      dto.code = dto.code.toUpperCase();
-    }
-
-    const updateData = { ...dto, updated_at: new Date().toISOString() };
+    // NOTE: Cannot update code as it's the primary key
+    // Remove code from update if it exists
+    const { code: _, ...updateData } = { ...dto, updated_at: new Date().toISOString() };
 
     const { data, error } = await supabase
       .from('coupons')
       .update(updateData)
-      .eq('id', id)
+      .eq('code', codeUpper)
       .select()
       .single();
 
@@ -158,10 +147,10 @@ export class CouponsService {
   /**
    * Delete a coupon
    */
-  async delete(id: string) {
+  async delete(code: string) {
     const supabase = this.supabaseService.getClient();
 
-    const { error } = await supabase.from('coupons').delete().eq('id', id);
+    const { error } = await supabase.from('coupons').delete().eq('code', code.toUpperCase());
 
     if (error) {
       throw new BadRequestException(`Lỗi khi xóa mã giảm giá: ${error.message}`);
@@ -173,18 +162,20 @@ export class CouponsService {
   /**
    * Toggle coupon active status
    */
-  async toggleStatus(id: string) {
+  async toggleStatus(code: string) {
     const supabase = this.supabaseService.getClient();
+
+    const codeUpper = code.toUpperCase();
 
     // Get current status
     const { data: existing, error: findError } = await supabase
       .from('coupons')
       .select('is_active')
-      .eq('id', id)
+      .eq('code', codeUpper)
       .single();
 
     if (findError || !existing) {
-      throw new NotFoundException(`Không tìm thấy mã giảm giá với ID: ${id}`);
+      throw new NotFoundException(`Không tìm thấy mã giảm giá: ${code}`);
     }
 
     const { data, error } = await supabase
@@ -193,7 +184,7 @@ export class CouponsService {
         is_active: !existing.is_active,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', id)
+      .eq('code', codeUpper)
       .select()
       .single();
 

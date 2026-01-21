@@ -14,18 +14,59 @@ import {
 export class SettingsService {
   constructor(private readonly supabaseService: SupabaseService) {}
 
-  // Default AI prompt
-  private readonly defaultAIPrompt = `Hãy viết một bài viết chi tiết, chuyên nghiệp và hấp dẫn. Bài viết cần có:
-1. Tiêu đề hấp dẫn
-2. Mở bài thu hút
-3. Nội dung chính với các tiêu đề phụ rõ ràng
-4. Kết luận súc tích
-5. Sử dụng ngôn ngữ tự nhiên, dễ hiểu
-
-Đảm bảo bài viết có giá trị thông tin cao và tối ưu cho SEO.`;
+  // Default AI prompt for article generation (JSONB structure)
+  private readonly defaultAIPromptJsonb = {
+    title: {
+      instruction: 'Tiêu đề bài viết hấp dẫn và SEO-friendly',
+      max_length: 200,
+      format: 'Không dùng ký tự đặc biệt'
+    },
+    description: {
+      instruction: 'Nội dung bài viết chi tiết',
+      min_words: 500,
+      structure: [
+        'Chia thành 3-7 phần với tiêu đề rõ ràng',
+        'Mỗi phần có 1 tiêu đề phụ (dùng thẻ <h3>) và 1-3 đoạn văn (dùng thẻ <p>)',
+        'Ví dụ format: <h3>Giới thiệu về [chủ đề]</h3><p>Nội dung giới thiệu...</p>',
+        'KHÔNG dùng markdown **, ### hoặc ký tự đặc biệt',
+        'Nội dung phải logic, dễ đọc, mạch lạc, tự nhiên, đúng chính tả, có giá trị thông tin thực tế, không trùng lặp'
+      ],
+      no_markdown: true
+    },
+    tags: {
+      instruction: 'Từ khóa liên quan',
+      quantity: '5-8',
+      separator: ',',
+      no_quotes: true
+    },
+    seo_keyword: {
+      instruction: 'URL slug thân thiện SEO',
+      format: 'lowercase, a-z, 0-9, hyphens only',
+      max_length: 100,
+      no_diacritics: true,
+      example: 'tin-tuc-cong-nghe-moi-nhat'
+    },
+    meta_title: {
+      instruction: 'Tiêu đề SEO tối ưu',
+      length: '50-60 ký tự',
+      no_duplicate_with_title: true,
+      natural: true
+    },
+    meta_description: {
+      instruction: 'Mô tả SEO hấp dẫn',
+      length: '120-150 ký tự',
+      natural: true
+    },
+    meta_keywords: {
+      instruction: 'Từ khóa SEO',
+      separator: ',',
+      correct_spelling: true,
+      complete_words: true
+    }
+  };
 
   /**
-   * Get AI settings
+   * Get AI settings (legacy - for backward compatibility)
    */
   async getAISettings() {
     const supabase = this.supabaseService.getClient();
@@ -37,12 +78,12 @@ export class SettingsService {
       .single();
 
     if (error || !data) {
-      // Return default settings
+      // Return default settings with OpenRouter
       return {
         api_key: '',
-        model: 'gpt-4',
-        api_url: 'https://api.openai.com/v1/chat/completions',
-        prompt: this.defaultAIPrompt,
+        model: 'meta-llama/llama-3.3-70b-instruct:free',
+        api_url: 'https://openrouter.ai/api/v1/chat/completions',
+        prompt: this.defaultAIPromptJsonb, // Return JSONB object
       };
     }
 
@@ -132,7 +173,7 @@ export class SettingsService {
       .from('admin_settings')
       .upsert({
         key: 'ai_content_generation',
-        value: { ...currentSettings, prompt: this.defaultAIPrompt },
+        value: { ...currentSettings, prompt: this.defaultAIPromptJsonb },
         updated_at: new Date().toISOString(),
       });
 
@@ -142,7 +183,7 @@ export class SettingsService {
 
     return {
       message: 'Reset AI prompt thành công',
-      prompt: this.defaultAIPrompt,
+      prompt: this.defaultAIPromptJsonb,
     };
   }
 
@@ -432,7 +473,7 @@ export class SettingsService {
   // =========================================================================
 
   /**
-   * Get API settings for article generation
+   * Get API settings for article generation (OpenRouter)
    */
   async getAPISettings(key: string = 'article_generation') {
     const supabase = this.supabaseService.getClient();
@@ -444,13 +485,14 @@ export class SettingsService {
       .single();
 
     if (error || !data) {
-      // Return default
+      // Return default with OpenRouter settings and JSONB prompt
       return {
-        key: 'article_generation',
-        model_name: 'gpt-4',
-        api_endpoint: 'https://api.openai.com/v1/chat/completions',
-        default_prompt: this.defaultAIPrompt,
-        description: 'Tạo nội dung bài viết tự động từ từ khóa',
+        key: 'openrouter_article_generation',
+        name: 'article',
+        model_name: 'meta-llama/llama-3.3-70b-instruct:free',
+        api_endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+        default_prompt: this.defaultAIPromptJsonb, // Return JSONB object
+        description: 'Tạo nội dung bài viết tự động từ từ khóa (OpenRouter)',
       };
     }
 
@@ -463,25 +505,56 @@ export class SettingsService {
   async updateAPISettings(key: string, dto: APISettingsDto) {
     const supabase = this.supabaseService.getClient();
 
-    const { error } = await supabase
+    // Check if setting exists
+    const { data: existing } = await supabase
       .from('api_settings')
-      .upsert({
-        key,
-        model_name: dto.model_name,
-        api_endpoint: dto.api_endpoint,
-        default_prompt: dto.default_prompt,
-        description: dto.description,
-        updated_at: new Date().toISOString(),
-      });
+      .select('id')
+      .eq('key', key)
+      .single();
 
-    if (error) {
-      throw new BadRequestException(`Lỗi khi cập nhật API settings: ${error.message}`);
+    let result;
+    if (existing) {
+      // Update existing
+      const { data, error } = await supabase
+        .from('api_settings')
+        .update({
+          model_name: dto.model_name,
+          api_endpoint: dto.api_endpoint,
+          default_prompt: dto.default_prompt,
+          description: dto.description,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('key', key)
+        .select()
+        .single();
+
+      if (error) {
+        throw new BadRequestException(`Lỗi khi cập nhật API settings: ${error.message}`);
+      }
+      result = data;
+    } else {
+      // Insert new
+      const { data, error } = await supabase
+        .from('api_settings')
+        .insert({
+          key,
+          model_name: dto.model_name,
+          api_endpoint: dto.api_endpoint,
+          default_prompt: dto.default_prompt,
+          description: dto.description,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        throw new BadRequestException(`Lỗi khi tạo API settings: ${error.message}`);
+      }
+      result = data;
     }
 
     return {
       message: 'Cập nhật API settings thành công',
-      key,
-      ...dto,
+      ...result,
     };
   }
 

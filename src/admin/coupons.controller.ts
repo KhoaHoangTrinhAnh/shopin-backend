@@ -29,11 +29,11 @@ export class CouponsController {
   }
 
   /**
-   * Get a single coupon by ID
+   * Get a single coupon by code
    */
-  @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.couponsService.findOne(id);
+  @Get(':code')
+  async findOne(@Param('code') code: string) {
+    return this.couponsService.findOne(code);
   }
 
   /**
@@ -47,25 +47,25 @@ export class CouponsController {
   /**
    * Update a coupon
    */
-  @Put(':id')
-  async update(@Param('id') id: string, @Body() dto: UpdateCouponDto) {
-    return this.couponsService.update(id, dto);
+  @Put(':code')
+  async update(@Param('code') code: string, @Body() dto: UpdateCouponDto) {
+    return this.couponsService.update(code, dto);
   }
 
   /**
    * Delete a coupon
    */
-  @Delete(':id')
-  async delete(@Param('id') id: string) {
-    return this.couponsService.delete(id);
+  @Delete(':code')
+  async delete(@Param('code') code: string) {
+    return this.couponsService.delete(code);
   }
 
   /**
    * Toggle coupon active status
    */
-  @Patch(':id/toggle')
-  async toggleStatus(@Param('id') id: string) {
-    return this.couponsService.toggleStatus(id);
+  @Patch(':code/toggle')
+  async toggleStatus(@Param('code') code: string) {
+    return this.couponsService.toggleStatus(code);
   }
 }
 

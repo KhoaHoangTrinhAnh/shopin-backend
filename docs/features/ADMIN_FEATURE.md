@@ -76,7 +76,6 @@
 - Trigger password reset email
 - Login history
 - Soft delete users
-- Block user from chat
 
 ---
 
