@@ -22,10 +22,15 @@ export class JwtAuthGuard implements CanActivate {
 
     try {
       const user = await this.authService.verifySession(token);
-      const profile = await this.authService.getProfile(user.id);
-
+      
+      // IMPORTANT: Use user.id (auth.users.id) as the primary identity
+      // This ensures consistency across all modules
       request.user = user;
-      request.profile = profile;
+      const { id, ...userData } = user;
+      request.profile = { 
+        id,  // Use auth.users.id as profile.id
+        ...userData 
+      };
 
       return true;
     } catch (error) {

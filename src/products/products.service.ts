@@ -208,7 +208,7 @@ export class ProductsService {
       if (productResult.data) {
         data = productResult.data;
       } else {
-        // If not found by product slug, try variant_slug
+        // If not found by product slug, try variant slug
         const variantResult = await supabase
           .from('product_variants')
           .select('product_id')
@@ -276,6 +276,52 @@ export class ProductsService {
     }
 
     return data as ProductVariant[];
+  }
+
+  /**
+   * Find a single variant by ID or slug, with product details
+   */
+  async findVariant(variantIdOrSlug: string): Promise<any> {
+    const supabase = this.supabaseService.getClient();
+    
+    // Check if it looks like a UUID
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(variantIdOrSlug);
+    
+    console.log('[ProductsService] Finding variant:', variantIdOrSlug, 'isUUID:', isUUID);
+    
+    // Use explicit relationship name to avoid ambiguity
+    // products!product_variants_product_id_fkey means: follow the FK from product_variants.product_id -> products.id
+    const { data, error } = await supabase
+      .from('product_variants')
+      .select(`
+        *,
+        product:products!product_variants_product_id_fkey(
+          id,
+          name,
+          slug,
+          description,
+          category:categories(id, name, slug),
+          brand:brands(id, name, slug)
+        )
+      `)
+      .eq(isUUID ? 'id' : 'variant_slug', variantIdOrSlug)
+      .single();
+
+    if (error) {
+      console.error('[ProductsService] Error finding variant:', error);
+      throw new NotFoundException(`Variant not found: ${variantIdOrSlug} - ${error.message}`);
+    }
+
+    if (!data) {
+      throw new NotFoundException(`Variant not found: ${variantIdOrSlug}`);
+    }
+
+    // Log if variant is inactive but still return it (frontend can handle display)
+    if (!data.is_active) {
+      console.warn('[ProductsService] Variant is inactive:', variantIdOrSlug);
+    }
+
+    return data;
   }
 
   async findFeatured(limit: number = 8): Promise<Product[]> {

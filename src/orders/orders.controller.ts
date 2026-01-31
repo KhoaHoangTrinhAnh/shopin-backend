@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/orders.dto';
+import { CreateDirectOrderDto } from './dto/create-direct-order.dto';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { Profile } from '../decorators/profile.decorator';
 
@@ -20,7 +21,18 @@ export class OrdersController {
 
   @Post()
   async createOrder(@Profile() profile: any, @Body() dto: CreateOrderDto) {
+    console.log('[OrdersController] Creating order for user:', profile.id);
     return this.ordersService.createOrder(profile.id, dto);
+  }
+
+  /**
+   * Create order directly from a product variant (bypass cart)
+   * Used for "Buy Now" functionality
+   */
+  @Post('direct')
+  async createDirectOrder(@Profile() profile: any, @Body() dto: CreateDirectOrderDto) {
+    console.log('[OrdersController] Creating direct order for user:', profile.id, 'variant:', dto.variant_id);
+    return this.ordersService.createDirectOrder(profile.id, dto);
   }
 
   @Get()

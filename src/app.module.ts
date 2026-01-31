@@ -13,6 +13,7 @@ import { OrdersModule } from './orders/orders.module';
 import { ProfilesModule } from './profiles/profiles.module';
 import { AdminModule } from './admin/admin.module';
 import { ConversationsModule } from './conversations/conversations.module';
+import { PaymentsModule } from './payments/payments.module';
 import supabaseConfig from './config/supabase.config';
 
 @Module({
@@ -33,6 +34,7 @@ import supabaseConfig from './config/supabase.config';
     ProfilesModule,
     AdminModule,
     ConversationsModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

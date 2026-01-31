@@ -41,6 +41,11 @@ export class ProductsController {
     return this.productsService.findBestSelling(limit);
   }
 
+  @Get('variants/:variantId')
+  findVariant(@Param('variantId') variantId: string) {
+    return this.productsService.findVariant(variantId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.productsService.findOne(id);

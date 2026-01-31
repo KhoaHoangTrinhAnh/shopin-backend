@@ -191,7 +191,7 @@ export class AdminService {
           id,
           quantity,
           price,
-          product:products(id, name, thumbnail)
+          product:products!order_items_product_id_fkey(id, name, thumbnail)
         )
       `,
         { count: 'exact' },
@@ -245,7 +245,7 @@ export class AdminService {
           id,
           quantity,
           price,
-          product:products(id, name, thumbnail, slug)
+          product:products!order_items_product_id_fkey(id, name, thumbnail, slug)
         ),
         confirmed_by_admin:profiles!orders_confirmed_by_fkey(id, full_name)
       `,

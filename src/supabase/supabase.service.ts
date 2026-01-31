@@ -36,6 +36,32 @@ export class SupabaseService {
         autoRefreshToken: false,
         persistSession: false,
       },
+      global: {
+        fetch: (url, options = {}) => {
+          // Add timeout to all fetch requests (30 seconds)
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000);
+          
+          // Preserve caller's abort signal by combining signals
+          let combinedSignal = controller.signal;
+          
+          if (options.signal) {
+            // Use AbortSignal.any if available (Node 20+)
+            if (typeof AbortSignal.any === 'function') {
+              combinedSignal = AbortSignal.any([options.signal, controller.signal]);
+            } else {
+              // Fallback: listen to caller signal and abort our controller
+              const callerSignal = options.signal as AbortSignal;
+              callerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+            }
+          }
+          
+          return fetch(url, {
+            ...options,
+            signal: combinedSignal,
+          }).finally(() => clearTimeout(timeoutId));
+        },
+      },
     });
   }
 

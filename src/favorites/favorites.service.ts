@@ -1,9 +1,11 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AddFavoriteDto, FavoriteItemResponse, FavoritesResponse } from './dto/favorites.dto';
 
 @Injectable()
 export class FavoritesService {
+  private readonly logger = new Logger(FavoritesService.name);
+  
   constructor(private readonly supabaseService: SupabaseService) {}
 
   /**
@@ -29,7 +31,13 @@ export class FavoritesService {
       .single();
 
     if (error || !created) {
-      throw new Error('Failed to create wishlist');
+      this.logger.error('Failed to create wishlist', {
+        message: error?.message || 'No data returned',
+        details: error?.details,
+        hint: error?.hint,
+        code: error?.code
+      });
+      throw new Error(`Failed to create wishlist`);
     }
 
     return created.id;

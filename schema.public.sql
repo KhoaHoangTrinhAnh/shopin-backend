@@ -14,7 +14,7 @@ CREATE TABLE public.addresses (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT addresses_pkey PRIMARY KEY (id),
-  CONSTRAINT addresses_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id)
+  CONSTRAINT addresses_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.admin_settings (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -25,15 +25,32 @@ CREATE TABLE public.admin_settings (
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT admin_settings_pkey PRIMARY KEY (id)
 );
+CREATE TABLE public.ai_usage_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid,
+  feature text NOT NULL DEFAULT 'article_generation'::text,
+  keyword text,
+  model_name text,
+  tokens_used integer DEFAULT 0,
+  prompt_tokens integer DEFAULT 0,
+  completion_tokens integer DEFAULT 0,
+  estimated_cost numeric DEFAULT 0,
+  success boolean DEFAULT true,
+  error_message text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT ai_usage_logs_pkey PRIMARY KEY (id),
+  CONSTRAINT ai_usage_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.api_settings (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   key text NOT NULL UNIQUE,
   model_name text NOT NULL,
   api_endpoint text NOT NULL,
-  default_prompt text NOT NULL,
+  default_prompt jsonb NOT NULL DEFAULT '{}'::jsonb,
   description text,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
+  name text,
   CONSTRAINT api_settings_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.articles (
@@ -59,7 +76,7 @@ CREATE TABLE public.articles (
   status text DEFAULT 'draft'::text CHECK (status = ANY (ARRAY['draft'::text, 'published'::text])),
   view_count integer DEFAULT 0,
   CONSTRAINT articles_pkey PRIMARY KEY (id),
-  CONSTRAINT articles_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.profiles(id)
+  CONSTRAINT articles_author_id_fkey FOREIGN KEY (author_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.audit_logs (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -72,7 +89,7 @@ CREATE TABLE public.audit_logs (
   user_agent text,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT audit_logs_pkey PRIMARY KEY (id),
-  CONSTRAINT audit_logs_admin_id_fkey FOREIGN KEY (admin_id) REFERENCES public.profiles(id)
+  CONSTRAINT audit_logs_admin_id_fkey FOREIGN KEY (admin_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.banners (
   id integer NOT NULL DEFAULT nextval('banners_id_seq'::regclass),
@@ -117,7 +134,7 @@ CREATE TABLE public.carts (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT carts_pkey PRIMARY KEY (id),
-  CONSTRAINT carts_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id)
+  CONSTRAINT carts_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.categories (
   id integer NOT NULL DEFAULT nextval('categories_id_seq'::regclass),
@@ -134,8 +151,8 @@ CREATE TABLE public.chat_messages (
   is_read boolean DEFAULT false,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT chat_messages_pkey PRIMARY KEY (id),
-  CONSTRAINT chat_messages_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id),
-  CONSTRAINT chat_messages_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES public.profiles(id)
+  CONSTRAINT chat_messages_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES auth.users(id),
+  CONSTRAINT chat_messages_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id)
 );
 CREATE TABLE public.chats (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -146,7 +163,7 @@ CREATE TABLE public.chats (
   metadata jsonb,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT chats_pkey PRIMARY KEY (id),
-  CONSTRAINT chats_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES public.profiles(id)
+  CONSTRAINT chats_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.conversations (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -158,7 +175,7 @@ CREATE TABLE public.conversations (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT conversations_pkey PRIMARY KEY (id),
-  CONSTRAINT conversations_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
+  CONSTRAINT conversations_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.coupons (
   code text NOT NULL,
@@ -214,9 +231,33 @@ CREATE TABLE public.orders (
   confirmed_at timestamp with time zone,
   confirmed_by uuid,
   admin_notes text,
+  cancellation_requested boolean DEFAULT false,
+  cancellation_requested_at timestamp with time zone,
+  cancellation_reason text,
+  cancellation_approved boolean,
+  cancellation_approved_at timestamp with time zone,
+  cancellation_approved_by uuid,
+  payment_status text DEFAULT 'pending'::text CHECK (payment_status = ANY (ARRAY['pending'::text, 'paid'::text, 'failed'::text, 'refunded'::text])),
   CONSTRAINT orders_pkey PRIMARY KEY (id),
+  CONSTRAINT orders_cancellation_approved_by_fkey FOREIGN KEY (cancellation_approved_by) REFERENCES public.profiles(id),
   CONSTRAINT orders_confirmed_by_fkey FOREIGN KEY (confirmed_by) REFERENCES public.profiles(id),
-  CONSTRAINT orders_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id)
+  CONSTRAINT orders_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.payment_transactions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  order_id uuid NOT NULL,
+  provider text NOT NULL DEFAULT 'sepay'::text,
+  transaction_id text UNIQUE,
+  order_invoice_number text NOT NULL UNIQUE,
+  amount numeric NOT NULL,
+  currency text NOT NULL DEFAULT 'VND'::text,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'success'::text, 'failed'::text, 'cancelled'::text])),
+  payment_method text,
+  raw_response jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT payment_transactions_pkey PRIMARY KEY (id),
+  CONSTRAINT payment_transactions_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id)
 );
 CREATE TABLE public.product_variants (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -262,12 +303,14 @@ CREATE TABLE public.profiles (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   avatar_url text,
-  user_id uuid UNIQUE,
+  user_id uuid NOT NULL UNIQUE,
   role text DEFAULT 'user'::text CHECK (role = ANY (ARRAY['user'::text, 'admin'::text])),
   gender text CHECK (gender = ANY (ARRAY['male'::text, 'female'::text, 'other'::text])),
   date_of_birth date,
   blocked boolean DEFAULT false,
-  CONSTRAINT profiles_pkey PRIMARY KEY (id)
+  deleted_at timestamp with time zone,
+  CONSTRAINT profiles_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_profiles_user_id FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.reviews (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -280,8 +323,8 @@ CREATE TABLE public.reviews (
   updated_at timestamp with time zone DEFAULT now(),
   metadata jsonb,
   CONSTRAINT reviews_pkey PRIMARY KEY (id),
-  CONSTRAINT reviews_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id),
-  CONSTRAINT reviews_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id)
+  CONSTRAINT reviews_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id),
+  CONSTRAINT reviews_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.wishlist_items (
   wishlist_id uuid NOT NULL,
@@ -296,5 +339,5 @@ CREATE TABLE public.wishlists (
   profile_id uuid,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT wishlists_pkey PRIMARY KEY (id),
-  CONSTRAINT wishlists_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id)
+  CONSTRAINT wishlists_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES auth.users(id)
 );

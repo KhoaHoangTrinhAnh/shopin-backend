@@ -15,7 +15,7 @@ export interface ProductVariant {
   product_id: string;
   sku: string;
   attributes: Record<string, any> | null;
-  variant_slug: string;
+  variant_slug: string; // Variant slug (e.g., 'iphone-15-pro-128gb-black')
   // Store prices in cents (integer) to avoid floating-point precision issues
   // Display: divide by 100 and format as currency
   price: number; // in cents, e.g., 1999900 = 19,999.00 VND

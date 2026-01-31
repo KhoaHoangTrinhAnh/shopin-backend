@@ -193,12 +193,16 @@ export class AuthService {
       const { data: { user }, error: verifyError } = await supabase.auth.getUser(accessToken);
       
       if (verifyError || !user) {
-        // Token already invalid, consider it logged out
+        // Token already invalid, still remove from cache
+        this.tokenCache.delete(accessToken);
         return { message: 'Logged out successfully' };
       }
 
       // Use admin API to sign out the user (requires service_role)
       const { error } = await supabase.auth.admin.signOut(accessToken);
+      
+      // Remove token from cache immediately
+      this.tokenCache.delete(accessToken);
       
       if (error) {
         console.warn('Admin signOut failed (non-critical):', error.message);
@@ -314,21 +318,59 @@ export class AuthService {
     }
   }
 
+  // Simple in-memory token cache (5 minutes TTL)
+  // Security trade-off: Revoked tokens remain valid for up to TOKEN_CACHE_TTL (configurable)
+  // For higher-security deployments, reduce TOKEN_CACHE_TTL or use external cache with revocation list
+  private tokenCache = new Map<string, { user: User; expiresAt: number }>();
+  private readonly TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes (configurable)
+
   /**
-   * Verify user session
+   * Verify user session with caching to reduce Supabase API calls
    */
   async verifySession(accessToken: string): Promise<User> {
+    // Check cache first
+    const cached = this.tokenCache.get(accessToken);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.user;
+    }
+
     const supabase = this.supabaseService.getClient();
 
     try {
       const { data: { user }, error } = await supabase.auth.getUser(accessToken);
 
       if (error || !user) {
+        // Remove from cache if invalid
+        this.tokenCache.delete(accessToken);
         throw new UnauthorizedException('Invalid session');
+      }
+
+      // Cache the verified user
+      this.tokenCache.set(accessToken, {
+        user,
+        expiresAt: Date.now() + this.TOKEN_CACHE_TTL,
+      });
+
+      // Clean up old cache entries (simple cleanup)
+      if (this.tokenCache.size > 1000) {
+        const now = Date.now();
+        for (const [key, value] of this.tokenCache.entries()) {
+          if (value.expiresAt < now) {
+            this.tokenCache.delete(key);
+          }
+        }
       }
 
       return user;
     } catch (error) {
+      // Remove from cache on error
+      this.tokenCache.delete(accessToken);
+      
+      // If it's a timeout error, provide more helpful message
+      if (error.message?.includes('timeout') || error.code === 'UND_ERR_CONNECT_TIMEOUT') {
+        throw new UnauthorizedException('Authentication service temporarily unavailable. Please try again.');
+      }
+      
       throw new UnauthorizedException('Session verification failed: ' + error.message);
     }
   }

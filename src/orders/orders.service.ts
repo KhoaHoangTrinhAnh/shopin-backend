@@ -3,6 +3,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { AddressesService } from '../addresses/addresses.service';
 import { CartService } from '../cart/cart.service';
 import { CreateOrderDto, OrderResponse, OrdersListResponse, OrderItemResponse } from './dto/orders.dto';
+import { CreateDirectOrderDto } from './dto/create-direct-order.dto';
 import { randomBytes } from 'crypto';
 
 @Injectable()
@@ -75,18 +76,26 @@ export class OrdersService {
     const shippingFee = subtotal >= 500000 ? 0 : 30000; // Free shipping over 500k
     const total = subtotal + shippingFee;
 
+    // Determine order status based on payment method
+    // For card payments, status is 'pending' until payment is completed
+    // For COD, auto confirm as per requirement
+    const paymentMethod = dto.payment_method || 'cod';
+    const orderStatus = paymentMethod === 'card' ? 'pending' : 'confirmed';
+    const paymentStatus = paymentMethod === 'card' ? 'pending' : null;
+
     // Create order
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .insert({
         profile_id: profileId,
         order_number: this.generateOrderNumber(),
-        status: 'confirmed', // Auto confirm as per requirement
+        status: orderStatus,
+        payment_status: paymentStatus,
         subtotal,
         shipping_fee: shippingFee,
         total,
         address: addressSnapshot,
-        payment_method: dto.payment_method || 'cod',
+        payment_method: paymentMethod,
         note: dto.note || null,
         coupon_code: dto.coupon_code || null,
       })
@@ -128,12 +137,15 @@ export class OrdersService {
       throw new BadRequestException(`Failed to create order items: ${itemsError.message}`);
     }
 
-    // Clear cart after successful order
-    try {
-      await this.cartService.clearCart(profileId);
-    } catch (clearError) {
-      // Log error but don't fail the order creation
-      console.error('Failed to clear cart after order:', clearError);
+    // ONLY clear cart for COD orders (immediate payment)
+    // For card payments, cart will be cleared AFTER payment is confirmed
+    if (paymentMethod === 'cod') {
+      try {
+        await this.cartService.clearCart(profileId);
+      } catch (clearError) {
+        // Log error but don't fail the order creation
+        console.error('Failed to clear cart after COD order:', clearError);
+      }
     }
 
     // Fetch complete order with items
@@ -355,5 +367,168 @@ export class OrdersService {
     }
 
     return this.getOrderById(profileId, orderId);
+  }
+
+  /**
+   * Create order directly from a product variant (bypass cart)
+   * Used for "Buy Now" functionality
+   * variant_id can be either UUID or slug
+   */
+  async createDirectOrder(profileId: string, dto: CreateDirectOrderDto): Promise<OrderResponse> {
+    const supabase = this.supabaseService.getClient();
+
+    // Fetch variant details - support both UUID and slug lookup
+    // Try UUID first, then slug if UUID fails
+    let variant: any = null;
+    let variantError: any = null;
+    
+    // Check if it looks like a UUID (contains hyphens in UUID format)
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dto.variant_id);
+    
+    if (isUUID) {
+      // Try UUID lookup
+      // Use explicit relationship to avoid ambiguity
+      const result = await supabase
+        .from('product_variants')
+        .select(`
+          *,
+          product:products!product_variants_product_id_fkey(*)
+        `)
+        .eq('id', dto.variant_id)
+        .single();
+      variant = result.data;
+      variantError = result.error;
+    }
+    
+    // If UUID lookup failed or it's not a UUID, try slug lookup
+    if (!variant) {
+      const result = await supabase
+        .from('product_variants')
+        .select(`
+          *,
+          product:products!product_variants_product_id_fkey(*)
+        `)
+        .eq('variant_slug', dto.variant_id)
+        .single();
+      variant = result.data;
+      variantError = result.error;
+    }
+
+    if (variantError || !variant) {
+      throw new NotFoundException('Product variant not found');
+    }
+
+    if (!variant.is_active) {
+      throw new BadRequestException('This product variant is not available');
+    }
+
+    // Validate stock with atomicity note
+    // TODO: Implement atomic stock decrement in transaction to prevent race conditions
+    // Current check is racy - stock could be sold between check and order creation
+    if (variant.qty < dto.qty) {
+      throw new BadRequestException(`Only ${variant.qty} items available in stock`);
+    }
+
+    // Get address
+    let addressSnapshot = dto.address;
+    if (dto.address_id) {
+      const address = await this.addressesService.getAddressById(profileId, dto.address_id);
+      addressSnapshot = {
+        full_name: address.full_name,
+        phone: address.phone,
+        address_line: address.address_line,
+        ward: address.ward || undefined,
+        district: address.district || undefined,
+        city: address.city || undefined,
+      };
+    }
+
+    if (!addressSnapshot) {
+      // Try to get default address
+      const defaultAddr = await this.addressesService.getDefaultAddress(profileId);
+      if (!defaultAddr) {
+        throw new BadRequestException('Please provide a delivery address');
+      }
+      addressSnapshot = {
+        full_name: defaultAddr.full_name,
+        phone: defaultAddr.phone,
+        address_line: defaultAddr.address_line,
+        ward: defaultAddr.ward || undefined,
+        district: defaultAddr.district || undefined,
+        city: defaultAddr.city || undefined,
+      };
+    }
+
+    const subtotal = variant.price * dto.qty;
+    const shippingFee = subtotal >= 500000 ? 0 : 30000;
+    const total = subtotal + shippingFee;
+
+    const paymentMethod = dto.payment_method || 'cod';
+    const orderStatus = paymentMethod === 'card' ? 'pending' : 'confirmed';
+    const paymentStatus = paymentMethod === 'card' ? 'pending' : null;
+
+    // Create order
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .insert({
+        profile_id: profileId,
+        order_number: this.generateOrderNumber(),
+        status: orderStatus,
+        payment_status: paymentStatus,
+        subtotal,
+        shipping_fee: shippingFee,
+        total,
+        address: addressSnapshot,
+        payment_method: paymentMethod,
+        note: dto.note || null,
+        coupon_code: dto.coupon_code || null,
+      })
+      .select('*')
+      .single();
+
+    if (orderError || !order) {
+      throw new BadRequestException('Failed to create order');
+    }
+
+    // Create order item
+    const variantName = variant.attributes 
+      ? Object.values(variant.attributes).join(' - ')
+      : null;
+
+    const { error: itemError } = await supabase
+      .from('order_items')
+      .insert({
+        order_id: order.id,
+        product_id: variant.product_id,
+        variant_id: variant.id,
+        variant_name: variantName,
+        product_name: variant.product?.name || 'Product',
+        main_image: variant.main_image || null,
+        qty: dto.qty,
+        unit_price: variant.price,
+      });
+
+    if (itemError) {
+      // Rollback order - verify deletion
+      const { error: deleteError } = await supabase
+        .from('orders')
+        .delete()
+        .eq('id', order.id);
+      
+      if (deleteError) {
+        this.logger.error(`Failed to rollback order ${order.id} after item creation failed`, {
+          deleteError: deleteError.message,
+          itemError: itemError.message
+        });
+        throw new InternalServerErrorException(
+          `Order created but item failed, and rollback failed: ${deleteError.message}. Order ID: ${order.id}`
+        );
+      }
+      
+      throw new BadRequestException(`Failed to create order item: ${itemError.message}`);
+    }
+
+    // Fetch complete order with items
+    return this.getOrderById(profileId, order.id);
   }
 }
