@@ -83,8 +83,7 @@ export class AdminService {
           placed_at,
           status,
           total,
-          profile_id,
-          customer:profiles!orders_profile_id_fkey(id, full_name, email, avatar_url)
+          profile_id
         `)
         .order('placed_at', { ascending: false })
         .limit(10),
@@ -154,14 +153,41 @@ export class AdminService {
         },
         pendingOrders: pendingOrdersResult.count || 0,
       },
-      recentOrders: (recentOrdersResult.data || []).map((order: any) => ({
-        ...order,
-        total_price: order.total, // Alias for frontend compatibility
-        created_at: order.placed_at,
-      })),
+      recentOrders: await this.enrichOrdersWithProfiles(recentOrdersResult.data || [], supabase),
       ordersByStatus,
       totalArticles: totalArticlesResult.count || 0,
     };
+  }
+
+  /**
+   * Helper to enrich orders with customer profile data
+   */
+  private async enrichOrdersWithProfiles(orders: any[], supabase: any) {
+    if (!orders || orders.length === 0) return [];
+
+    const profileIds = [...new Set(orders.map(o => o.profile_id).filter(Boolean))];
+    
+    if (profileIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, full_name, email, avatar_url')
+        .in('user_id', profileIds);
+
+      const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
+
+      return orders.map((order: any) => ({
+        ...order,
+        customer: profileMap.get(order.profile_id) || null,
+        total_price: order.total,
+        created_at: order.placed_at,
+      }));
+    }
+
+    return orders.map((order: any) => ({
+      ...order,
+      total_price: order.total,
+      created_at: order.placed_at,
+    }));
   }
 
   private calculatePercentageChange(current: number, previous: number): number {
@@ -185,14 +211,7 @@ export class AdminService {
       .from('orders')
       .select(
         `
-        *,
-        customer:profiles!orders_profile_id_fkey(id, full_name, email, phone, avatar_url),
-        items:order_items(
-          id,
-          quantity,
-          price,
-          product:products!order_items_product_id_fkey(id, name, thumbnail)
-        )
+        *
       `,
         { count: 'exact' },
       );
@@ -212,14 +231,34 @@ export class AdminService {
     // Apply pagination
     queryBuilder = queryBuilder.range(offset, offset + limit - 1);
 
-    const { data, error, count } = await queryBuilder;
+    const { data: orders, error, count } = await queryBuilder;
 
     if (error) {
       throw new BadRequestException(`Lỗi khi lấy danh sách đơn hàng: ${error.message}`);
     }
 
+    // Fetch customer profiles for all orders
+    if (orders && orders.length > 0) {
+      const profileIds = [...new Set(orders.map(o => o.profile_id).filter(Boolean))];
+      
+      if (profileIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('user_id, full_name, email, phone, avatar_url')
+          .in('user_id', profileIds);
+
+        // Map profiles by user_id for quick lookup
+        const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
+
+        // Attach customer data to orders
+        orders.forEach((order: any) => {
+          order.customer = profileMap.get(order.profile_id) || null;
+        });
+      }
+    }
+
     return {
-      data,
+      data: orders,
       meta: {
         total: count || 0,
         page,
@@ -235,29 +274,69 @@ export class AdminService {
   async getOrderDetail(id: string) {
     const supabase = this.supabaseService.getClient();
 
-    const { data, error } = await supabase
+    const { data: order, error } = await supabase
       .from('orders')
-      .select(
-        `
-        *,
-        customer:profiles!orders_profile_id_fkey(id, full_name, email, phone, avatar_url),
-        items:order_items(
-          id,
-          quantity,
-          price,
-          product:products!order_items_product_id_fkey(id, name, thumbnail, slug)
-        ),
-        confirmed_by_admin:profiles!orders_confirmed_by_fkey(id, full_name)
-      `,
-      )
+      .select('*')
       .eq('id', id)
       .single();
 
-    if (error) {
+    if (error || !order) {
       throw new NotFoundException(`Không tìm thấy đơn hàng với ID: ${id}`);
     }
 
-    return data;
+    // Fetch customer profile
+    if (order.profile_id) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('user_id, full_name, email, phone, avatar_url')
+        .eq('user_id', order.profile_id)
+        .single();
+      
+      order.customer = profile;
+    }
+
+    // Fetch order items with product details
+    const { data: items } = await supabase
+      .from('order_items')
+      .select(`
+        id,
+        quantity,
+        price,
+        product_id
+      `)
+      .eq('order_id', id);
+
+    if (items && items.length > 0) {
+      // Fetch products for all items
+      const productIds = items.map(item => item.product_id).filter(Boolean);
+      if (productIds.length > 0) {
+        const { data: products } = await supabase
+          .from('products')
+          .select('id, name, thumbnail, slug')
+          .in('id', productIds);
+
+        const productMap = new Map(products?.map(p => [p.id, p]) || []);
+        
+        items.forEach((item: any) => {
+          item.product = productMap.get(item.product_id) || null;
+        });
+      }
+      
+      order.items = items;
+    }
+
+    // Fetch confirmed_by admin profile if exists
+    if (order.confirmed_by) {
+      const { data: confirmedByProfile } = await supabase
+        .from('profiles')
+        .select('user_id, full_name')
+        .eq('user_id', order.confirmed_by)
+        .single();
+      
+      order.confirmed_by_admin = confirmedByProfile;
+    }
+
+    return order;
   }
 
   /**
@@ -456,15 +535,9 @@ export class AdminService {
 
     const supabase = this.supabaseService.getClient();
     
-    const { data, error, count } = await supabase
+    const { data: orders, error, count } = await supabase
       .from('orders')
-      .select(
-        `
-        *,
-        customer:profiles!orders_profile_id_fkey(id, full_name, email, phone, avatar_url)
-      `,
-        { count: 'exact' },
-      )
+      .select('*', { count: 'exact' })
       .eq('cancellation_requested', true)
       .is('cancellation_approved', null)
       .order('cancellation_requested_at', { ascending: false })
@@ -474,8 +547,26 @@ export class AdminService {
       throw new BadRequestException(`Lỗi khi lấy danh sách yêu cầu hủy: ${error.message}`);
     }
 
+    // Fetch customer profiles for all orders
+    if (orders && orders.length > 0) {
+      const profileIds = [...new Set(orders.map(o => o.profile_id).filter(Boolean))];
+      
+      if (profileIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('user_id, full_name, email, phone, avatar_url')
+          .in('user_id', profileIds);
+
+        const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
+
+        orders.forEach((order: any) => {
+          order.customer = profileMap.get(order.profile_id) || null;
+        });
+      }
+    }
+
     return {
-      data,
+      data: orders,
       meta: {
         total: count || 0,
         page,

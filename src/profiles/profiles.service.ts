@@ -19,7 +19,7 @@ export class ProfilesService {
     const { data: profile, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('id', profileId)
+      .eq('user_id', profileId)
       .single();
 
     if (error || !profile) {
@@ -61,7 +61,7 @@ export class ProfilesService {
     const { data: updated, error } = await supabase
       .from('profiles')
       .update(updateData)
-      .eq('id', profileId)
+      .eq('user_id', profileId)
       .select()
       .single();
 

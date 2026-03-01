@@ -147,7 +147,7 @@ CREATE TABLE public.chat_messages (
   conversation_id uuid NOT NULL,
   sender_id uuid NOT NULL,
   sender_role text NOT NULL CHECK (sender_role = ANY (ARRAY['user'::text, 'admin'::text])),
-  message text NOT NULL,
+  message text NOT NULL CHECK (length(message) >= 1 AND length(message) <= 5000),
   is_read boolean DEFAULT false,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT chat_messages_pkey PRIMARY KEY (id),
@@ -167,11 +167,11 @@ CREATE TABLE public.chats (
 );
 CREATE TABLE public.conversations (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL,
+  user_id uuid NOT NULL UNIQUE,
   last_message text,
   last_message_at timestamp with time zone DEFAULT now(),
   unread_count integer DEFAULT 0,
-  status text DEFAULT 'active'::text CHECK (status = ANY (ARRAY['active'::text, 'archived'::text, 'closed'::text])),
+  status text DEFAULT 'active'::text CHECK (status = ANY (ARRAY['active'::text, 'resolved'::text, 'archived'::text])),
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT conversations_pkey PRIMARY KEY (id),
@@ -239,9 +239,9 @@ CREATE TABLE public.orders (
   cancellation_approved_by uuid,
   payment_status text DEFAULT 'pending'::text CHECK (payment_status = ANY (ARRAY['pending'::text, 'paid'::text, 'failed'::text, 'refunded'::text])),
   CONSTRAINT orders_pkey PRIMARY KEY (id),
-  CONSTRAINT orders_cancellation_approved_by_fkey FOREIGN KEY (cancellation_approved_by) REFERENCES public.profiles(id),
-  CONSTRAINT orders_confirmed_by_fkey FOREIGN KEY (confirmed_by) REFERENCES public.profiles(id),
-  CONSTRAINT orders_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES auth.users(id)
+  CONSTRAINT orders_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES auth.users(id),
+  CONSTRAINT orders_cancellation_approved_by_fkey FOREIGN KEY (cancellation_approved_by) REFERENCES auth.users(id),
+  CONSTRAINT orders_confirmed_by_fkey FOREIGN KEY (confirmed_by) REFERENCES auth.users(id)
 );
 CREATE TABLE public.payment_transactions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

@@ -11,6 +11,7 @@ import {
   UseGuards,
   Req,
   Logger,
+  BadRequestException,
 } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import {

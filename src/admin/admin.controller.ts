@@ -58,10 +58,10 @@ export class AdminController {
   @Post('orders/:id/confirm')
   async confirmOrder(
     @Param('id') id: string,
-    @Profile() profile: { id: string },
+    @Profile() profile: { user_id: string },
     @Body() dto: ConfirmOrderDto,
   ) {
-    return this.adminService.confirmOrder(id, profile.id, dto);
+    return this.adminService.confirmOrder(id, profile.user_id, dto);
   }
 
   /**
@@ -70,10 +70,10 @@ export class AdminController {
   @Put('orders/:id/status')
   async updateOrderStatus(
     @Param('id') id: string,
-    @Profile() profile: { id: string },
+    @Profile() profile: { user_id: string },
     @Body() dto: UpdateOrderStatusDto,
   ) {
-    return this.adminService.updateOrderStatus(id, profile.id, dto);
+    return this.adminService.updateOrderStatus(id, profile.user_id, dto);
   }
 
   /**
@@ -90,9 +90,9 @@ export class AdminController {
   @Post('orders/:id/cancellation/approve')
   async approveCancellation(
     @Param('id') id: string,
-    @Profile() profile: { id: string },
+    @Profile() profile: { user_id: string },
   ) {
-    return this.adminService.approveCancellation(id, profile.id);
+    return this.adminService.approveCancellation(id, profile.user_id);
   }
 
   /**
@@ -101,10 +101,10 @@ export class AdminController {
   @Post('orders/:id/cancellation/reject')
   async rejectCancellation(
     @Param('id') id: string,
-    @Profile() profile: { id: string },
+    @Profile() profile: { user_id: string },
     @Body() body: { reason?: string },
   ) {
-    return this.adminService.rejectCancellation(id, profile.id, body.reason);
+    return this.adminService.rejectCancellation(id, profile.user_id, body.reason);
   }
 
   // =========================================================================

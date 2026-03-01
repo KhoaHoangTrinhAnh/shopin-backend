@@ -11,27 +11,27 @@ export class FavoritesController {
 
   @Get()
   async getFavorites(@Profile() profile: any) {
-    return this.favoritesService.getFavorites(profile.id);
+    return this.favoritesService.getFavorites(profile.user_id);
   }
 
   @Post()
   async addFavorite(@Profile() profile: any, @Body() dto: AddFavoriteDto) {
-    return this.favoritesService.addFavorite(profile.id, dto);
+    return this.favoritesService.addFavorite(profile.user_id, dto);
   }
 
   @Delete(':productId')
   async removeFavorite(@Profile() profile: any, @Param('productId') productId: string) {
-    return this.favoritesService.removeFavorite(profile.id, productId);
+    return this.favoritesService.removeFavorite(profile.user_id, productId);
   }
 
   @Get(':productId/check')
   async checkFavorite(@Profile() profile: any, @Param('productId') productId: string) {
-    const isFavorite = await this.favoritesService.isFavorite(profile.id, productId);
+    const isFavorite = await this.favoritesService.isFavorite(profile.user_id, productId);
     return { isFavorite };
   }
 
   @Post(':productId/toggle')
   async toggleFavorite(@Profile() profile: any, @Param('productId') productId: string) {
-    return this.favoritesService.toggleFavorite(profile.id, productId);
+    return this.favoritesService.toggleFavorite(profile.user_id, productId);
   }
 }

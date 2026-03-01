@@ -12,7 +12,7 @@ import { AddressesModule } from './addresses/addresses.module';
 import { OrdersModule } from './orders/orders.module';
 import { ProfilesModule } from './profiles/profiles.module';
 import { AdminModule } from './admin/admin.module';
-import { ConversationsModule } from './conversations/conversations.module';
+// ConversationsModule removed - consolidated into AdminModule (ChatController handles both admin and customer)
 import { PaymentsModule } from './payments/payments.module';
 import supabaseConfig from './config/supabase.config';
 
@@ -33,7 +33,7 @@ import supabaseConfig from './config/supabase.config';
     OrdersModule,
     ProfilesModule,
     AdminModule,
-    ConversationsModule,
+    // ConversationsModule removed - chat functionality now in AdminModule
     PaymentsModule,
   ],
   controllers: [AppController],

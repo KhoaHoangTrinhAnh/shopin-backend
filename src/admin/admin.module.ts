@@ -11,6 +11,7 @@ import { AuditLogsController } from './audit-logs.controller';
 import { AuditLogsService } from './audit-logs.service';
 import { AdminChatController, ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
+import { ChatGateway } from './chat.gateway';
 import { SupabaseModule } from '../supabase/supabase.module';
 import { AuthModule } from '../auth/auth.module';
 
@@ -27,7 +28,15 @@ import { AuthModule } from '../auth/auth.module';
     AdminChatController,
     ChatController,
   ],
-  providers: [AdminService, ArticlesService, CouponsService, SettingsService, AuditLogsService, ChatService],
-  exports: [AdminService, ArticlesService, CouponsService, SettingsService, AuditLogsService, ChatService],
+  providers: [
+    AdminService,
+    ArticlesService,
+    CouponsService,
+    SettingsService,
+    AuditLogsService,
+    ChatService,
+    ChatGateway,
+  ],
+  exports: [AdminService, ArticlesService, CouponsService, SettingsService, AuditLogsService, ChatService, ChatGateway],
 })
 export class AdminModule {}

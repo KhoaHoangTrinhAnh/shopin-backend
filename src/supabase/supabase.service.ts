@@ -37,7 +37,7 @@ export class SupabaseService {
         persistSession: false,
       },
       global: {
-        fetch: (url, options = {}) => {
+        fetch: (url, options: RequestInit = {}) => {
           // Add timeout to all fetch requests (30 seconds)
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -67,5 +67,60 @@ export class SupabaseService {
 
   getClient(): SupabaseClient {
     return this.supabase;
+  }
+
+  /**
+   * Create a Supabase client with user's JWT token
+   * Use this for RPC functions that need auth.uid() context
+   * 
+   * @param accessToken - User's JWT access token from Supabase Auth
+   * @returns SupabaseClient configured with user's auth context
+   */
+  getClientWithAuth(accessToken: string): SupabaseClient {
+    // Validate accessToken is non-empty
+    if (!accessToken || accessToken.trim() === '') {
+      throw new Error('accessToken must be a non-empty string');
+    }
+    
+    const supabaseUrl = this.configService.get<string>('supabase.url');
+    const supabaseAnonKey = this.configService.get<string>('supabase.anonKey');
+    
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error('Supabase URL and Anon Key must be provided');
+    }
+
+    // Create client with anon key and set user's JWT token
+    return createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        fetch: (url, options: RequestInit = {}) => {
+          // Add timeout to all fetch requests (30 seconds)
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000);
+          
+          let combinedSignal = controller.signal;
+          
+          if (options.signal) {
+            if (typeof AbortSignal.any === 'function') {
+              combinedSignal = AbortSignal.any([options.signal, controller.signal]);
+            } else {
+              const callerSignal = options.signal as AbortSignal;
+              callerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+            }
+          }
+          
+          return fetch(url, {
+            ...options,
+            signal: combinedSignal,
+          }).finally(() => clearTimeout(timeoutId));
+        },
+      },
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
   }
 }

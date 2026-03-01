@@ -15,7 +15,7 @@ export class CartController {
    */
   @Post('items')
   async addToCart(@Profile() profile: any, @Body() addToCartDto: AddToCartDto) {
-    return this.cartService.addToCart(profile.id, addToCartDto);
+    return this.cartService.addToCart(profile.user_id, addToCartDto);
   }
 
   /**
@@ -24,7 +24,7 @@ export class CartController {
    */
   @Get()
   async getCart(@Profile() profile: any) {
-    return this.cartService.getCart(profile.id);
+    return this.cartService.getCart(profile.user_id);
   }
 
   /**
@@ -37,7 +37,7 @@ export class CartController {
     @Param('id') itemId: string,
     @Body() updateDto: UpdateCartItemDto,
   ) {
-    return this.cartService.updateCartItem(profile.id, itemId, updateDto);
+    return this.cartService.updateCartItem(profile.user_id, itemId, updateDto);
   }
 
   /**
@@ -46,7 +46,7 @@ export class CartController {
    */
   @Delete('items/:id')
   async removeCartItem(@Profile() profile: any, @Param('id') itemId: string) {
-    return this.cartService.removeCartItem(profile.id, itemId);
+    return this.cartService.removeCartItem(profile.user_id, itemId);
   }
 
   /**
@@ -55,7 +55,7 @@ export class CartController {
    */
   @Delete()
   async clearCart(@Profile() profile: any) {
-    return this.cartService.clearCart(profile.id);
+    return this.cartService.clearCart(profile.user_id);
   }
 
   /**
@@ -64,6 +64,6 @@ export class CartController {
    */
   @Post('sync')
   async syncCart(@Profile() profile: any, @Body() syncDto: SyncCartDto) {
-    return this.cartService.syncCart(profile.id, syncDto);
+    return this.cartService.syncCart(profile.user_id, syncDto);
   }
 }

@@ -48,8 +48,8 @@ export class ArticlesController {
    * Create a new article
    */
   @Post()
-  async create(@Profile() profile: { id: string }, @Body() dto: CreateArticleDto) {
-    return this.articlesService.create(profile.id, dto);
+  async create(@Profile() profile: { user_id: string }, @Body() dto: CreateArticleDto) {
+    return this.articlesService.create(profile.user_id, dto);
   }
 
   /**

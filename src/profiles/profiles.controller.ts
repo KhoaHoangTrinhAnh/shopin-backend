@@ -28,10 +28,10 @@ export class ProfilesController {
    */
   @Get()
   async getProfile(@Profile() profile: any) {
-    if (!profile?.id) {
+    if (!profile?.user_id) {
       throw new UnauthorizedException('Invalid profile data');
     }
-    return this.profilesService.getProfile(profile.id);
+    return this.profilesService.getProfile(profile.user_id);
   }
 
   /**
@@ -39,10 +39,10 @@ export class ProfilesController {
    */
   @Put()
   async updateProfile(@Profile() profile: any, @Body() dto: UpdateProfileDto) {
-    if (!profile?.id) {
+    if (!profile?.user_id) {
       throw new UnauthorizedException('Invalid profile data');
     }
-    return this.profilesService.updateProfile(profile.id, dto);
+    return this.profilesService.updateProfile(profile.user_id, dto);
   }
 
   /**
@@ -68,14 +68,14 @@ export class ProfilesController {
     )
     file: Express.Multer.File,
   ) {
-    if (!profile?.id) {
+    if (!profile?.user_id) {
       throw new UnauthorizedException('Invalid profile data');
     }
 
-    const avatarUrl = await this.profilesService.uploadAvatar(profile.id, file);
+    const avatarUrl = await this.profilesService.uploadAvatar(profile.user_id, file);
     
     // Update profile with new avatar URL and return complete updated profile
-    const updatedProfile = await this.profilesService.updateProfile(profile.id, { avatar_url: avatarUrl });
+    const updatedProfile = await this.profilesService.updateProfile(profile.user_id, { avatar_url: avatarUrl });
 
     return updatedProfile;
   }

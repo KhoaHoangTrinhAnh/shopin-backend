@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AddressesService } from '../addresses/addresses.service';
 import { CartService } from '../cart/cart.service';
@@ -8,6 +8,8 @@ import { randomBytes } from 'crypto';
 
 @Injectable()
 export class OrdersService {
+  private logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly addressesService: AddressesService,

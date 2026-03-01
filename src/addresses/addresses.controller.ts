@@ -20,23 +20,23 @@ export class AddressesController {
 
   @Get()
   async getAddresses(@Profile() profile: any) {
-    return this.addressesService.getAddresses(profile.id);
+    return this.addressesService.getAddresses(profile.user_id);
   }
 
   @Get('default')
   async getDefaultAddress(@Profile() profile: any) {
-    const address = await this.addressesService.getDefaultAddress(profile.id);
+    const address = await this.addressesService.getDefaultAddress(profile.user_id);
     return { address };
   }
 
   @Get(':id')
   async getAddressById(@Profile() profile: any, @Param('id') id: string) {
-    return this.addressesService.getAddressById(profile.id, id);
+    return this.addressesService.getAddressById(profile.user_id, id);
   }
 
   @Post()
   async createAddress(@Profile() profile: any, @Body() dto: CreateAddressDto) {
-    return this.addressesService.createAddress(profile.id, dto);
+    return this.addressesService.createAddress(profile.user_id, dto);
   }
 
   @Put(':id')
@@ -45,16 +45,16 @@ export class AddressesController {
     @Param('id') id: string,
     @Body() dto: UpdateAddressDto,
   ) {
-    return this.addressesService.updateAddress(profile.id, id, dto);
+    return this.addressesService.updateAddress(profile.user_id, id, dto);
   }
 
   @Delete(':id')
   async deleteAddress(@Profile() profile: any, @Param('id') id: string) {
-    return this.addressesService.deleteAddress(profile.id, id);
+    return this.addressesService.deleteAddress(profile.user_id, id);
   }
 
   @Post(':id/set-default')
   async setDefaultAddress(@Profile() profile: any, @Param('id') id: string) {
-    return this.addressesService.setDefaultAddress(profile.id, id);
+    return this.addressesService.setDefaultAddress(profile.user_id, id);
   }
 }

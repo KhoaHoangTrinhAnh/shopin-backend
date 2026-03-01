@@ -23,14 +23,18 @@ export class JwtAuthGuard implements CanActivate {
     try {
       const user = await this.authService.verifySession(token);
       
-      // IMPORTANT: Use user.id (auth.users.id) as the primary identity
-      // This ensures consistency across all modules
+      // Fetch the complete profile from database
+      const profile = await this.authService.getProfile(user.id);
+      
+      if (!profile) {
+        throw new UnauthorizedException('Profile not found');
+      }
+      
+      // IMPORTANT: Attach both user and profile to request
+      // user = auth.users data (id, email, etc.)
+      // profile = profiles table data (user_id, role, full_name, etc.)
       request.user = user;
-      const { id, ...userData } = user;
-      request.profile = { 
-        id,  // Use auth.users.id as profile.id
-        ...userData 
-      };
+      request.profile = profile;
 
       return true;
     } catch (error) {

@@ -1,12 +1,30 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
+import { ChatGateway } from './chat.gateway';
 
+/**
+ * Chat Service
+ * 
+ * Handles all chat-related operations for both customers and admins.
+ * Uses Supabase RPC functions for business logic (defined in migration 019).
+ * Direct table queries are used only for read operations with RLS protection.
+ * Emits WebSocket events for real-time updates.
+ */
 @Injectable()
 export class ChatService {
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    @Inject(forwardRef(() => ChatGateway))
+    private readonly chatGateway?: ChatGateway,
+  ) {}
+
+  // ============================================================================
+  // ADMIN METHODS
+  // ============================================================================
 
   /**
-   * Get all conversations for admin
+   * Get all conversations for admin panel
+   * Sorted by last_message_at descending (most recent first)
    */
   async getConversations(page: number = 1, limit: number = 20, filters?: {
     status?: string;
@@ -15,33 +33,67 @@ export class ChatService {
     const supabase = this.supabaseService.getClient();
     const offset = (page - 1) * limit;
 
+    // Build query for conversations (fetch profiles separately since there's no direct FK)
     let query = supabase
       .from('conversations')
-      .select(`
-        *,
-        user:profiles!conversations_user_id_fkey(
-          id,
-          full_name,
-          email,
-          avatar_url
-        )
-      `, { count: 'exact' });
+      .select('*', { count: 'exact' });
 
-    // Apply filters
+    // Filter by status (default: exclude archived)
     if (filters?.status) {
       query = query.eq('status', filters.status);
+    } else {
+      // By default, show active and resolved (not archived)
+      query = query.neq('status', 'archived');
     }
 
-    const { data, error, count } = await query
-      .order('last_message_at', { ascending: false })
+    const { data: conversations, error, count } = await query
+      .order('last_message_at', { ascending: false, nullsFirst: false })
       .range(offset, offset + limit - 1);
 
     if (error) {
       throw new BadRequestException(`Error fetching conversations: ${error.message}`);
     }
 
+    // Fetch user profiles for all conversations
+    if (conversations && conversations.length > 0) {
+      const userIds = conversations.map(c => c.user_id);
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, full_name, email, avatar_url')
+        .in('user_id', userIds);
+
+      // Map profiles to conversations
+      const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
+      
+      const conversationsWithProfiles = conversations.map(c => ({
+        ...c,
+        user: profileMap.get(c.user_id) || null,
+      }));
+
+      // Apply search filter if needed (after fetching profiles)
+      let filteredData = conversationsWithProfiles;
+      if (filters?.search) {
+        const searchLower = filters.search.toLowerCase();
+        filteredData = conversationsWithProfiles.filter(c => {
+          const fullName = c.user?.full_name?.toLowerCase() || '';
+          const email = c.user?.email?.toLowerCase() || '';
+          return fullName.includes(searchLower) || email.includes(searchLower);
+        });
+      }
+
+      return {
+        data: filteredData,
+        meta: {
+          total: count || 0,
+          page,
+          limit,
+          totalPages: Math.ceil((count || 0) / limit),
+        },
+      };
+    }
+
     return {
-      data: data || [],
+      data: [],
       meta: {
         total: count || 0,
         page,
@@ -52,51 +104,45 @@ export class ChatService {
   }
 
   /**
-   * Get conversation detail
+   * Get single conversation detail (admin)
    */
   async getConversation(id: string) {
     const supabase = this.supabaseService.getClient();
 
-    const { data, error } = await supabase
+    const { data: conversation, error } = await supabase
       .from('conversations')
-      .select(`
-        *,
-        user:profiles!conversations_user_id_fkey(
-          id,
-          full_name,
-          email,
-          avatar_url,
-          created_at
-        )
-      `)
+      .select('*')
       .eq('id', id)
       .single();
 
-    if (error || !data) {
+    if (error || !conversation) {
       throw new NotFoundException(`Conversation not found with ID: ${id}`);
     }
 
-    return data;
+    // Fetch user profile separately
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('user_id, full_name, email, avatar_url, created_at')
+      .eq('user_id', conversation.user_id)
+      .single();
+
+    return {
+      ...conversation,
+      user: profile || null,
+    };
   }
 
   /**
    * Get messages in a conversation
+   * RLS ensures admin can only see if they have access
    */
   async getMessages(conversationId: string, limit: number = 50, offset: number = 0) {
     const supabase = this.supabaseService.getClient();
 
-    const { data, error, count } = await supabase
+    // Fetch messages first
+    const { data: messages, error, count } = await supabase
       .from('chat_messages')
-      .select(`
-        *,
-        sender:profiles!chat_messages_sender_id_fkey(
-          id,
-          full_name,
-          email,
-          avatar_url,
-          role
-        )
-      `, { count: 'exact' })
+      .select('*', { count: 'exact' })
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true })
       .range(offset, offset + limit - 1);
@@ -105,8 +151,33 @@ export class ChatService {
       throw new BadRequestException(`Error fetching messages: ${error.message}`);
     }
 
+    // Fetch sender profiles separately if messages exist
+    if (messages && messages.length > 0) {
+      const senderIds = [...new Set(messages.map(m => m.sender_id))];
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, full_name, email, avatar_url, role')
+        .in('user_id', senderIds);
+
+      // Map profiles to messages
+      const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
+      const messagesWithSender = messages.map(m => ({
+        ...m,
+        sender: profileMap.get(m.sender_id) || null,
+      }));
+
+      return {
+        data: messagesWithSender,
+        meta: {
+          total: count || 0,
+          limit,
+          offset,
+        },
+      };
+    }
+
     return {
-      data: data || [],
+      data: [],
       meta: {
         total: count || 0,
         limit,
@@ -116,141 +187,239 @@ export class ChatService {
   }
 
   /**
-   * Send a message (admin or user)
+   * Send message as admin using RPC function
+   * Emits WebSocket event for real-time delivery
+   * Note: senderId is derived from accessToken via auth.uid() in RPC function
    */
-  async sendMessage(senderId: string, conversationId: string, message: string, senderRole: string) {
-    const supabase = this.supabaseService.getClient();
+  async sendMessageAsAdmin(conversationId: string, message: string, accessToken: string) {
+    // Use authenticated client so RPC function can access auth.uid()
+    const supabase = this.supabaseService.getClientWithAuth(accessToken);
 
-    // Create message
-    const { data: messageData, error: messageError } = await supabase
-      .from('chat_messages')
-      .insert({
-        conversation_id: conversationId,
-        sender_id: senderId,
-        sender_role: senderRole,
-        message,
-        is_read: false,
-      })
-      .select()
-      .single();
+    // Use RPC function which handles all business logic
+    const { data, error } = await supabase
+      .rpc('send_chat_message', {
+        p_conversation_id: conversationId,
+        p_message: message,
+      });
 
-    if (messageError) {
-      throw new BadRequestException(`Error sending message: ${messageError.message}`);
+    if (error) {
+      throw new BadRequestException(`Error sending message: ${error.message}`);
     }
 
-    // Update conversation last message
-    const { data: conversation } = await supabase
-      .from('conversations')
-      .select('unread_count')
-      .eq('id', conversationId)
-      .single();
+    // Fetch the message with sender profile
+    const senderIds = [data.sender_id];
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('user_id, full_name, email, avatar_url, role')
+      .in('user_id', senderIds);
 
-    await supabase
-      .from('conversations')
-      .update({
-        last_message: message,
-        last_message_at: new Date().toISOString(),
-        unread_count: (conversation?.unread_count || 0) + 1,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', conversationId);
+    const profile = profiles?.[0] || null;
+    const messageWithSender = {
+      ...data,
+      sender: profile,
+    };
 
-    return messageData;
+    // Emit WebSocket event for real-time delivery
+    if (this.chatGateway?.server) {
+      console.log(`[ChatService] Emitting message_received to room ${conversationId}`);
+      // Use a timeout to ensure event is emitted after response
+      setImmediate(() => {
+        this.chatGateway?.server?.to(conversationId).emit('message_received', {
+          message: messageWithSender,
+          conversationId,
+        });
+        console.log(`[ChatService] ✅ Event emitted for room ${conversationId}`);
+      });
+    } else {
+      console.warn('[ChatService] ⚠️ ChatGateway or server not available');
+    }
+
+    return messageWithSender;
   }
 
   /**
-   * Create or get existing conversation for a user
+   * Update conversation status (resolve/archive) - admin only
    */
-  async getOrCreateConversation(userId: string) {
-    const supabase = this.supabaseService.getClient();
+  async updateConversationStatus(conversationId: string, status: 'active' | 'resolved' | 'archived', accessToken: string) {
+    // Use authenticated client so RPC function can access auth.uid()
+    const supabase = this.supabaseService.getClientWithAuth(accessToken);
 
-    // Check if conversation exists
-    const { data: existing } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .single();
-
-    if (existing) {
-      return existing;
-    }
-
-    // Create new conversation
     const { data, error } = await supabase
-      .from('conversations')
-      .insert({
-        user_id: userId,
-        status: 'active',
-      })
-      .select()
-      .single();
+      .rpc('update_conversation_status', {
+        p_conversation_id: conversationId,
+        p_status: status,
+      });
 
     if (error) {
-      throw new BadRequestException(`Error creating conversation: ${error.message}`);
+      throw new BadRequestException(`Error updating status: ${error.message}`);
     }
 
     return data;
   }
 
   /**
-   * Mark messages as read
+   * Mark messages as read using RPC function
    */
-  async markAsRead(conversationId: string, role: 'user' | 'admin') {
-    const supabase = this.supabaseService.getClient();
+  async markAsRead(conversationId: string, accessToken?: string) {
+    // Use authenticated client if token provided (for customer calls)
+    // Otherwise use service client (for admin calls)
+    const supabase = accessToken 
+      ? this.supabaseService.getClientWithAuth(accessToken)
+      : this.supabaseService.getClient();
 
-    // Mark all unread messages in this conversation as read
     const { error } = await supabase
-      .from('chat_messages')
-      .update({ is_read: true })
-      .eq('conversation_id', conversationId)
-      .eq('is_read', false)
-      .neq('sender_role', role); // Don't mark own messages as read
+      .rpc('mark_messages_read', {
+        p_conversation_id: conversationId,
+      });
 
     if (error) {
       throw new BadRequestException(`Error marking messages as read: ${error.message}`);
     }
 
-    // Reset unread count
-    await supabase
-      .from('conversations')
-      .update({ unread_count: 0 })
-      .eq('id', conversationId);
-
     return { success: true };
   }
 
   /**
-   * Archive conversation
+   * Get admin unread count across all conversations
    */
-  async archiveConversation(id: string) {
-    const supabase = this.supabaseService.getClient();
+  async getAdminUnreadCount(accessToken: string): Promise<number> {
+    // Use authenticated client so RPC function can access auth.uid()
+    const supabase = this.supabaseService.getClientWithAuth(accessToken);
 
-    const { error } = await supabase
-      .from('conversations')
-      .update({ status: 'archived', updated_at: new Date().toISOString() })
-      .eq('id', id);
+    const { data, error } = await supabase
+      .rpc('get_admin_unread_count');
 
     if (error) {
-      throw new BadRequestException(`Error archiving conversation: ${error.message}`);
+      console.error('Error getting admin unread count:', error);
+      return 0;
     }
 
-    return { success: true };
+    return data || 0;
+  }
+
+  // ============================================================================
+  // CUSTOMER METHODS
+  // ============================================================================
+
+  /**
+   * Get or create conversation for customer using RPC function
+   * Returns existing conversation or creates new one
+   * Note: userId is derived from accessToken via auth.uid() in RPC function
+   */
+  async getOrCreateConversation(accessToken: string) {
+    // Use authenticated client so RPC function can access auth.uid()
+    const supabase = this.supabaseService.getClientWithAuth(accessToken);
+
+    // Use RPC function which handles the logic
+    const { data, error } = await supabase
+      .rpc('create_or_get_conversation');
+
+    if (error) {
+      throw new BadRequestException(`Error getting conversation: ${error.message}`);
+    }
+
+    return data;
   }
 
   /**
-   * Get user's own conversation
+   * Get customer's own conversation
+   * Uses authenticated client to enforce RLS
    */
-  async getUserConversation(userId: string) {
-    const supabase = this.supabaseService.getClient();
+  async getUserConversation(accessToken: string) {
+    const supabase = this.supabaseService.getClientWithAuth(accessToken);
 
-    const { data } = await supabase
+    // RLS ensures user can only see their own conversation
+    const { data, error } = await supabase
       .from('conversations')
       .select('*')
-      .eq('user_id', userId)
-      .eq('status', 'active')
       .single();
+
+    if (error && error.code !== 'PGRST116') {
+      throw new BadRequestException(`Error fetching conversation: ${error.message}`);
+    }
 
     return data || null;
   }
+
+  /**
+   * Send message as customer using RPC function
+   * Supports auto-creating conversation if conversationId is null
+   * Emits WebSocket event for real-time delivery
+   */
+  async sendMessageAsUser(userId: string, conversationId: string | null, message: string, accessToken: string) {
+    // Use authenticated client so RPC function can access auth.uid()
+    const supabase = this.supabaseService.getClientWithAuth(accessToken);
+
+    // Use RPC function which handles:
+    // - Auto-create conversation if null
+    // - Validate message length
+    // - Update conversation metadata
+    const { data, error } = await supabase
+      .rpc('send_chat_message', {
+        p_conversation_id: conversationId,
+        p_message: message,
+      });
+
+    if (error) {
+      throw new BadRequestException(`Error sending message: ${error.message}`);
+    }
+
+    // Fetch sender profile
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('user_id, full_name, email, avatar_url, role')
+      .eq('user_id', data.sender_id)
+      .limit(1);
+
+    const messageWithSender = {
+      ...data,
+      sender: profiles?.[0] || null,
+    };
+
+    // Emit WebSocket event for real-time delivery
+    if (this.chatGateway?.server && data.conversation_id) {
+      console.log(`[ChatService] Emitting message_received to room ${data.conversation_id}`);
+      setImmediate(() => {
+        this.chatGateway?.server?.to(data.conversation_id).emit('message_received', {
+          message: messageWithSender,
+          conversationId: data.conversation_id,
+        });
+        console.log(`[ChatService] ✅ Event emitted for room ${data.conversation_id}`);
+        
+        // Also notify admin of new conversation if it was just created
+        if (!conversationId) {
+          console.log('[ChatService] Broadcasting new conversation to admins');
+          this.chatGateway?.broadcastNewConversation({ id: data.conversation_id, user_id: userId });
+        }
+      });
+    } else {
+      console.warn('[ChatService] ⚠️ ChatGateway or server not available');
+    }
+
+    return messageWithSender;
+  }
+
+  /**
+   * Get customer unread count
+   */
+  async getCustomerUnreadCount(accessToken: string): Promise<number> {
+    // Use authenticated client so RPC function can access auth.uid()
+    const supabase = this.supabaseService.getClientWithAuth(accessToken);
+
+    const { data, error } = await supabase
+      .rpc('get_customer_unread_count');
+
+    if (error) {
+      console.error('Error getting customer unread count:', error);
+      return 0;
+    }
+
+    return data || 0;
+  }
+
+  // ============================================================================
+  // LEGACY METHODS (removed - use specific methods instead)
+  // ============================================================================
+  // sendMessage() - removed, use sendMessageAsAdmin() or sendMessageAsUser()
+  // archiveConversation() - removed, use updateConversationStatus()
 }

@@ -21,8 +21,8 @@ export class OrdersController {
 
   @Post()
   async createOrder(@Profile() profile: any, @Body() dto: CreateOrderDto) {
-    console.log('[OrdersController] Creating order for user:', profile.id);
-    return this.ordersService.createOrder(profile.id, dto);
+    console.log('[OrdersController] Creating order for user:', profile.user_id);
+    return this.ordersService.createOrder(profile.user_id, dto);
   }
 
   /**
@@ -31,8 +31,8 @@ export class OrdersController {
    */
   @Post('direct')
   async createDirectOrder(@Profile() profile: any, @Body() dto: CreateDirectOrderDto) {
-    console.log('[OrdersController] Creating direct order for user:', profile.id, 'variant:', dto.variant_id);
-    return this.ordersService.createDirectOrder(profile.id, dto);
+    console.log('[OrdersController] Creating direct order for user:', profile.user_id, 'variant:', dto.variant_id);
+    return this.ordersService.createDirectOrder(profile.user_id, dto);
   }
 
   @Get()
@@ -41,18 +41,18 @@ export class OrdersController {
     @Query('page', new ParseIntPipe({ optional: true })) page: number = 1,
     @Query('limit', new ParseIntPipe({ optional: true })) limit: number = 10,
   ) {
-    return this.ordersService.getOrders(profile.id, page, limit);
+    return this.ordersService.getOrders(profile.user_id, page, limit);
   }
 
   @Get('latest')
   async getLatestOrder(@Profile() profile: any) {
-    const order = await this.ordersService.getLatestOrder(profile.id);
+    const order = await this.ordersService.getLatestOrder(profile.user_id);
     return { order };
   }
 
   @Get(':id')
   async getOrderById(@Profile() profile: any, @Param('id') id: string) {
-    return this.ordersService.getOrderById(profile.id, id);
+    return this.ordersService.getOrderById(profile.user_id, id);
   }
 
   /**
@@ -64,6 +64,6 @@ export class OrdersController {
     @Param('id') id: string,
     @Body() body: { reason?: string },
   ) {
-    return this.ordersService.requestCancellation(profile.id, id, body.reason);
+    return this.ordersService.requestCancellation(profile.user_id, id, body.reason);
   }
 }
